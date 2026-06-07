@@ -1,0 +1,9 @@
+base: configs/default.yaml
+model:
+  type: tcn
+  hidden_channels: 32
+  kernel_size: 3
+  dilations: [1, 2, 4, 8]
+  dropout: 0.2
+  attention: false
+  multitask: false

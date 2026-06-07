@@ -1,0 +1,72 @@
+project:
+  name: financial-kinematics
+  seed: 42
+
+paths:
+  raw_data_dir: data/raw
+  processed_data_dir: data/processed
+  tables_dir: results/tables
+  figures_dir: results/figures
+  checkpoints_dir: results/checkpoints
+
+data:
+  assets:
+    - RELIANCE.NS
+    - TCS.NS
+    - INFY.NS
+    - HDFCBANK.NS
+    - ICICIBANK.NS
+    - SBIN.NS
+    - LT.NS
+  start_date: "2008-01-01"
+  end_date:
+
+splits:
+  train_start: "2008-01-01"
+  train_end: "2018-12-31"
+  val_start: "2019-01-01"
+  val_end: "2021-12-31"
+  test_start: "2022-01-01"
+  test_end:
+
+features:
+  feature_set: full_domain
+  sequence_length: 60
+  rolling_vol_windows: [7, 14, 30]
+  momentum_windows: [7, 30, 90]
+  drawdown_window: 90
+  true_range_windows: [7, 30]
+  volume_z_window: 30
+  include_jerk: false
+
+target:
+  horizon: 30
+  regime_quantile: 0.75
+
+model:
+  type: multitask_tcn
+  hidden_channels: 32
+  kernel_size: 3
+  dilations: [1, 2, 4, 8]
+  dropout: 0.2
+  attention: false
+
+training:
+  epochs: 30
+  batch_size: 64
+  learning_rate: 0.001
+  patience: 5
+  alpha: 1.0
+  beta: 1.0
+  weight_decay: 0.0001
+  device: auto
+
+experiments:
+  tabular_window: latest
+  ablations:
+    A1: log_price_only
+    A2: log_price_velocity
+    A3: kinematics
+    A4: full_domain
+    A5: full_domain_multitask
+    A6: full_domain_multitask_attention
