@@ -27,7 +27,15 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
     base_path = config.pop("base", None)
     if base_path:
-        base_config = load_config(base_path)
+        base_config_path = Path(base_path)
+        if not base_config_path.is_absolute():
+            relative_base_path = config_path.parent / base_config_path
+            base_config_path = (
+                relative_base_path
+                if relative_base_path.exists()
+                else base_config_path
+            )
+        base_config = load_config(base_config_path)
         return deep_update(base_config, config)
     return config
 

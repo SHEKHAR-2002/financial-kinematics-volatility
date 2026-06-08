@@ -52,13 +52,20 @@ model:
   attention: false
 
 training:
-  epochs: 30
+  epochs: 100
   batch_size: 64
   learning_rate: 0.001
-  patience: 5
-  alpha: 1.0
+  patience: 15
+  alpha: 1000.0
   beta: 1.0
   weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  scheduler:
+    type: reduce_on_plateau
+    factor: 0.5
+    patience: 5
+    min_lr: 0.000001
+  print_progress: true
   device: auto
 
 experiments:

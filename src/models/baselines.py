@@ -103,7 +103,7 @@ def classical_prediction_bundles(
     for model_name, regressor in regressors.items():
         classifier_name = model_name.replace("_regressor", "_classifier")
         classifier = classifiers.get(classifier_name)
-        if model_name == "ridge":
+        if model_name in {"ridge", "lasso"}:
             classifier = classifiers.get("logistic_regression")
         score = pred = None
         if classifier is not None:

@@ -9,7 +9,14 @@ import pandas as pd
 from src.data.datasets import prepare_splits
 from src.data.features import get_feature_columns
 from src.training.evaluate import evaluate_bundles, save_metrics
-from src.training.train import build_model, load_processed_frame, predict_bundle, train_model
+from src.training.train import (
+    DEFAULT_REGIME_THRESHOLD,
+    build_model,
+    load_processed_frame,
+    predict_bundle,
+    train_model,
+    tune_regime_threshold,
+)
 from src.utils.config import ensure_dir, load_config
 from src.utils.seed import set_seed
 
@@ -62,13 +69,23 @@ def run_ablation(config: dict, processed_path: str | Path) -> pd.DataFrame:
 
         model = build_model(model_cfg, num_features=len(feature_columns))
         model, _ = train_model(model, splits, cfg.get("training", {}))
+        regime_threshold = DEFAULT_REGIME_THRESHOLD
+        if bool(model_cfg.get("multitask", model_cfg["type"] == "multitask_tcn")):
+            regime_threshold = tune_regime_threshold(
+                model,
+                splits.val,
+                device=cfg.get("training", {}).get("device", "auto"),
+            )
         bundle = predict_bundle(
             model,
             splits.test,
             model_name=f"{ablation_id}_{model_cfg['type']}",
             device=cfg.get("training", {}).get("device", "auto"),
+            regime_threshold=regime_threshold,
         )
         metrics = evaluate_bundles([bundle]).iloc[0].to_dict()
+        if bundle.y_regime_score is not None:
+            metrics["regime_threshold"] = regime_threshold
         metrics.update(
             {
                 "ablation": ablation_id,

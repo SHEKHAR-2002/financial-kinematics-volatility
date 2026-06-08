@@ -1,4 +1,4 @@
-base: configs/default.yaml
+base: default.yaml
 model:
   type: tcn
   hidden_channels: 32

@@ -1,4 +1,4 @@
-base: configs/default.yaml
+base: default.yaml
 model:
   type: lstm
   hidden_size: 64

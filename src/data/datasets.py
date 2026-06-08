@@ -9,6 +9,12 @@ from sklearn.preprocessing import StandardScaler
 
 from src.data.features import apply_risk_threshold, fit_risk_threshold
 
+try:
+    from torch.utils.data import Dataset as TorchDataset
+except ImportError:
+    class TorchDataset:  # type: ignore[no-redef]
+        pass
+
 
 @dataclass(frozen=True)
 class SplitConfig:
@@ -219,7 +225,7 @@ def prepare_splits(
     )
 
 
-class SequenceDataset:
+class SequenceDataset(TorchDataset):
     """Torch Dataset wrapper imported lazily so preprocessing tests do not need torch."""
 
     def __init__(self, arrays: SequenceArrays):
