@@ -67,8 +67,40 @@ def test_feature_scaler_is_fit_on_train_split_only():
             test_end="2020-01-04",
         ),
         sequence_length=1,
+        enforce_label_boundaries=False,
     )
 
     assert prepared.frames["train"]["f"].tolist() == [-1.0, 1.0]
     assert prepared.frames["val"].loc[0, "f"] == 99.0
     assert prepared.frames["test"].loc[0, "f"] == 199.0
+
+
+def test_prepare_splits_enforces_future_label_boundaries():
+    dates = pd.date_range("2020-01-01", periods=8, freq="D")
+    frame = pd.DataFrame(
+        {
+            "Date": dates,
+            "asset": ["A"] * len(dates),
+            "f": np.arange(len(dates), dtype=float),
+            "future_vol_2": np.arange(len(dates), dtype=float),
+        }
+    )
+
+    prepared = prepare_splits(
+        frame,
+        feature_columns=["f"],
+        split_config=SplitConfig(
+            train_start="2020-01-01",
+            train_end="2020-01-04",
+            val_start="2020-01-05",
+            val_end="2020-01-06",
+            test_start="2020-01-07",
+            test_end="2020-01-08",
+        ),
+        sequence_length=1,
+        target_col="future_vol_2",
+    )
+
+    assert prepared.frames["train"]["Date"].max() == pd.Timestamp("2020-01-02")
+    assert prepared.frames["train"]["future_vol_2_end_date"].max() <= pd.Timestamp("2020-01-04")
+    assert prepared.frames["val"].empty

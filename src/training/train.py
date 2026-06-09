@@ -10,9 +10,10 @@ import pandas as pd
 from src.data.datasets import PreparedSplits, SequenceDataset, prepare_splits
 from src.data.features import get_feature_columns
 from src.models.baselines import PredictionBundle
-from src.models.lstm import LSTMMultiTask, LSTMVolatilityRegressor
+from src.models.lstm import LSTMVolatilityRegressor
+from src.models.multitask_lstm import LSTMMultiTask
 from src.models.multitask_tcn import MultiTaskTCN
-from src.models.tcn import TCNVolatilityRegressor
+from src.models.tcn import TCNVolatilityRegressor, TCNVolatilityRegressorMLP
 from src.training.evaluate import evaluate_bundles, save_metrics
 from src.training.losses import MultiTaskLoss, positive_class_weight
 from src.utils.config import ensure_dir, load_config
@@ -20,6 +21,14 @@ from src.utils.seed import set_seed
 
 
 DEFAULT_REGIME_THRESHOLD = 0.5
+
+
+def model_artifact_name(model_config: dict) -> str:
+    """Return the stable name used for metrics, history, and checkpoint files."""
+    explicit_name = model_config.get("name")
+    if explicit_name:
+        return str(explicit_name)
+    return str(model_config.get("type", "model"))
 
 
 def _require_torch():
@@ -39,11 +48,18 @@ def resolve_device(requested: str = "auto") -> str:
 
 
 def build_model(model_config: dict, num_features: int):
-    model_type = model_config.get("type", "multitask_tcn")
-    multitask = bool(model_config.get("multitask", model_type == "multitask_tcn"))
+    if "type" not in model_config:
+        raise ValueError("config.model.type is required")
+    model_type = str(model_config["type"])
+    multitask = bool(
+        model_config.get(
+            "multitask",
+            model_type in {"multitask_lstm", "multitask_tcn"},
+        )
+    )
 
-    if model_type == "lstm":
-        if multitask:
+    if model_type in {"lstm", "multitask_lstm"}:
+        if multitask or model_type == "multitask_lstm":
             return LSTMMultiTask(
                 num_features=num_features,
                 hidden_size=int(model_config.get("hidden_size", 64)),
@@ -58,7 +74,25 @@ def build_model(model_config: dict, num_features: int):
         )
 
     if model_type == "tcn":
+        if multitask:
+            return MultiTaskTCN(
+                num_features=num_features,
+                hidden_channels=int(model_config.get("hidden_channels", 32)),
+                kernel_size=int(model_config.get("kernel_size", 3)),
+                dilations=model_config.get("dilations", [1, 2, 4, 8]),
+                dropout=float(model_config.get("dropout", 0.2)),
+                attention=bool(model_config.get("attention", False)),
+            )
         return TCNVolatilityRegressor(
+            num_features=num_features,
+            hidden_channels=int(model_config.get("hidden_channels", 32)),
+            kernel_size=int(model_config.get("kernel_size", 3)),
+            dilations=model_config.get("dilations", [1, 2, 4, 8]),
+            dropout=float(model_config.get("dropout", 0.2)),
+        )
+
+    if model_type == "tcn_mlp":
+        return TCNVolatilityRegressorMLP(
             num_features=num_features,
             hidden_channels=int(model_config.get("hidden_channels", 32)),
             kernel_size=int(model_config.get("kernel_size", 3)),
@@ -121,6 +155,13 @@ def _build_scheduler(torch, optimizer, training_config: dict):
         patience=int(scheduler_config.get("patience", 5)),
         min_lr=float(scheduler_config.get("min_lr", 1e-6)),
     )
+
+
+def _monitor_metric(row: dict[str, float], metric_name: str) -> float:
+    if metric_name not in row:
+        available = ", ".join(sorted(row))
+        raise ValueError(f"Unknown early stopping metric '{metric_name}'. Available: {available}")
+    return float(row[metric_name])
 
 
 def _print_training_start(
@@ -250,6 +291,7 @@ def train_regression_model(
     patience_left = patience
     history: list[dict[str, float]] = []
     epochs = int(training_config.get("epochs", 30))
+    early_stopping_metric = str(training_config.get("early_stopping_metric", "val_loss"))
 
     _print_training_start(model, "regression", splits, device, epochs, training_config)
 
@@ -268,22 +310,26 @@ def train_regression_model(
             train_losses.append(float(loss.detach().cpu()))
 
         val_loss = _regression_loss(model, val_loader, criterion, device)
-        if scheduler is not None:
-            scheduler.step(val_loss)
-
-        improved = val_loss < best_val
         row = {
             "epoch": float(epoch),
             "train_loss": float(np.mean(train_losses)),
             "val_loss": val_loss,
             "lr": _current_lr(optimizer),
         }
+        monitored_value = _monitor_metric(row, early_stopping_metric)
+        if scheduler is not None:
+            scheduler.step(monitored_value)
+
+        improved = monitored_value < best_val
         if improved:
-            best_val = val_loss
+            best_val = monitored_value
             best_state = deepcopy(model.state_dict())
             patience_left = patience
         else:
             patience_left -= 1
+        row["early_stopping_metric"] = early_stopping_metric
+        row["monitored_value"] = monitored_value
+        row["best_monitored_value"] = best_val
         row["best_val_loss"] = best_val
         row["patience_left"] = float(patience_left)
         history.append(row)
@@ -348,6 +394,9 @@ def train_multitask_model(
     patience_left = patience
     history: list[dict[str, float]] = []
     epochs = int(training_config.get("epochs", 30))
+    early_stopping_metric = str(
+        training_config.get("early_stopping_metric", "val_volatility_loss")
+    )
 
     _print_training_start(model, "multi-task", splits, device, epochs, training_config)
 
@@ -369,10 +418,6 @@ def train_multitask_model(
         train_summary = _average_loss_parts(train_parts)
         val_summary = _multitask_loss_parts(model, val_loader, criterion, device)
         val_loss = val_summary["loss"]
-        if scheduler is not None:
-            scheduler.step(val_loss)
-
-        improved = val_loss < best_val
         row = {
             "epoch": float(epoch),
             "train_loss": train_summary["loss"],
@@ -386,12 +431,20 @@ def train_multitask_model(
             if key != "loss":
                 row[f"val_{key}"] = value
 
+        monitored_value = _monitor_metric(row, early_stopping_metric)
+        if scheduler is not None:
+            scheduler.step(monitored_value)
+
+        improved = monitored_value < best_val
         if improved:
-            best_val = val_loss
+            best_val = monitored_value
             best_state = deepcopy(model.state_dict())
             patience_left = patience
         else:
             patience_left -= 1
+        row["early_stopping_metric"] = early_stopping_metric
+        row["monitored_value"] = monitored_value
+        row["best_monitored_value"] = best_val
         row["best_val_loss"] = best_val
         row["patience_left"] = float(patience_left)
         history.append(row)
@@ -468,6 +521,7 @@ def predict_bundle(
         y_regime_true=arrays.y_regime.astype(int) if y_score is not None else None,
         y_regime_score=y_score,
         y_regime_pred=y_pred,
+        regime_threshold=regime_threshold if y_score is not None else None,
     )
 
 
@@ -507,7 +561,7 @@ def run_training(config: dict, processed_path: str | Path):
         )
 
     model, history = train_model(model, splits, training_cfg)
-    model_name = config.get("model", {}).get("type", "model")
+    model_name = model_artifact_name(config.get("model", {}))
     regime_threshold = DEFAULT_REGIME_THRESHOLD
     if _is_multitask_model(model):
         regime_threshold = tune_regime_threshold(
@@ -545,7 +599,7 @@ def run_training(config: dict, processed_path: str | Path):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train a leakage-free sequence model.")
-    parser.add_argument("--config", default="configs/multitask_tcn.yaml")
+    parser.add_argument("--config", default="configs/lstm.yaml")
     parser.add_argument("--processed", default="data/processed/features_all.csv")
     args = parser.parse_args()
 

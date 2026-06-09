@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Mapping
 
 import numpy as np
@@ -62,11 +63,14 @@ def chronological_split(
     frame: pd.DataFrame,
     config: SplitConfig | Mapping[str, object] | None = None,
     date_col: str = "Date",
+    label_end_col: str | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Split without shuffling or cross-split sequence construction."""
+    """Split without shuffling or cross-split sequence/label construction."""
     cfg = config if isinstance(config, SplitConfig) else split_config_from_mapping(config)
     df = frame.copy()
     df[date_col] = pd.to_datetime(df[date_col])
+    if label_end_col and label_end_col in df.columns:
+        df[label_end_col] = pd.to_datetime(df[label_end_col])
     df = df.sort_values(["asset", date_col] if "asset" in df.columns else [date_col])
 
     test_end = pd.Timestamp(cfg.test_end) if cfg.test_end else df[date_col].max()
@@ -78,7 +82,50 @@ def chronological_split(
         "test": (df[date_col] >= pd.Timestamp(cfg.test_start))
         & (df[date_col] <= test_end),
     }
+    if label_end_col and label_end_col in df.columns:
+        split_ends = {
+            "train": pd.Timestamp(cfg.train_end),
+            "val": pd.Timestamp(cfg.val_end),
+            "test": test_end,
+        }
+        for name, end_date in split_ends.items():
+            masks[name] = masks[name] & df[label_end_col].notna() & (df[label_end_col] <= end_date)
     return {name: df.loc[mask].copy().reset_index(drop=True) for name, mask in masks.items()}
+
+
+def infer_horizon_from_target(target_col: str) -> int | None:
+    match = re.search(r"_(\d+)$", target_col)
+    return int(match.group(1)) if match else None
+
+
+def ensure_label_end_date(
+    frame: pd.DataFrame,
+    target_col: str,
+    date_col: str = "Date",
+    group_col: str = "asset",
+) -> tuple[pd.DataFrame, str | None]:
+    """Return a frame with a target label-end date column when it can be inferred."""
+    end_col = f"{target_col}_end_date"
+    out = frame.copy()
+    if end_col in out.columns:
+        out[end_col] = pd.to_datetime(out[end_col])
+        return out, end_col
+
+    horizon = infer_horizon_from_target(target_col)
+    if horizon is None:
+        return out, None
+
+    out[date_col] = pd.to_datetime(out[date_col])
+    if group_col in out.columns:
+        out[end_col] = (
+            out.sort_values([group_col, date_col])
+            .groupby(group_col, sort=False)[date_col]
+            .shift(-horizon)
+        )
+    else:
+        out = out.sort_values(date_col)
+        out[end_col] = out[date_col].shift(-horizon)
+    return out, end_col
 
 
 def fit_feature_scaler(train_frame: pd.DataFrame, feature_columns: list[str]) -> StandardScaler:
@@ -190,9 +237,15 @@ def prepare_splits(
     sequence_length: int = 60,
     target_col: str = "future_vol_30",
     regime_quantile: float = 0.75,
+    enforce_label_boundaries: bool = True,
 ) -> PreparedSplits:
     """Prepare leakage-free scaled sequence splits."""
-    split_frames = chronological_split(frame, split_config)
+    prepared_frame, label_end_col = ensure_label_end_date(frame, target_col)
+    split_frames = chronological_split(
+        prepared_frame,
+        split_config,
+        label_end_col=label_end_col if enforce_label_boundaries else None,
+    )
     threshold = fit_risk_threshold(split_frames["train"], target_col, regime_quantile)
     labeled_frames = {
         name: apply_risk_threshold(split, threshold, target_col=target_col)

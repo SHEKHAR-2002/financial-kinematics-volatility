@@ -13,6 +13,7 @@ from src.training.train import (
     DEFAULT_REGIME_THRESHOLD,
     build_model,
     load_processed_frame,
+    model_artifact_name,
     predict_bundle,
     train_model,
     tune_regime_threshold,
@@ -48,6 +49,7 @@ def run_walk_forward(config: dict, processed_path: str | Path) -> pd.DataFrame:
     feature_columns = get_feature_columns(features_cfg.get("feature_set", "full_domain"))
     sequence_length = int(features_cfg.get("sequence_length", 60))
     target_col = f"future_vol_{int(target_cfg.get('horizon', 30))}"
+    model_name = model_artifact_name(config.get("model", {}))
     max_date = pd.to_datetime(frame["Date"]).max()
     last_test_year = min(max_date.year, int(config.get("walk_forward", {}).get("last_test_year", max_date.year)))
     first_test_year = int(config.get("walk_forward", {}).get("first_test_year", 2016))
@@ -87,7 +89,12 @@ def run_walk_forward(config: dict, processed_path: str | Path) -> pd.DataFrame:
         model, _ = train_model(model, splits, cfg.get("training", {}))
         model_cfg = cfg.get("model", {})
         regime_threshold = DEFAULT_REGIME_THRESHOLD
-        if bool(model_cfg.get("multitask", model_cfg.get("type") == "multitask_tcn")):
+        if bool(
+            model_cfg.get(
+                "multitask",
+                model_cfg.get("type") in {"multitask_lstm", "multitask_tcn"},
+            )
+        ):
             regime_threshold = tune_regime_threshold(
                 model,
                 splits.val,
@@ -96,7 +103,7 @@ def run_walk_forward(config: dict, processed_path: str | Path) -> pd.DataFrame:
         bundle = predict_bundle(
             model,
             splits.test,
-            model_name=cfg.get("model", {}).get("type", "model"),
+            model_name=model_name,
             device=cfg.get("training", {}).get("device", "auto"),
             regime_threshold=regime_threshold,
         )
@@ -115,13 +122,13 @@ def run_walk_forward(config: dict, processed_path: str | Path) -> pd.DataFrame:
 
     results = pd.DataFrame(rows)
     tables_dir = ensure_dir(config.get("paths", {}).get("tables_dir", "results/tables"))
-    save_metrics(results, tables_dir / "walk_forward_metrics.csv")
+    save_metrics(results, tables_dir / f"{model_name}_walk_forward_metrics.csv")
     return results
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run expanding walk-forward validation.")
-    parser.add_argument("--config", default="configs/multitask_tcn.yaml")
+    parser.add_argument("--config", default="configs/lstm.yaml")
     parser.add_argument("--processed", default="data/processed/features_all.csv")
     args = parser.parse_args()
 

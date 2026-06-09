@@ -13,6 +13,7 @@ from src.training.train import (
     DEFAULT_REGIME_THRESHOLD,
     build_model,
     load_processed_frame,
+    model_artifact_name,
     predict_bundle,
     train_model,
     tune_regime_threshold,
@@ -22,13 +23,16 @@ from src.utils.seed import set_seed
 
 
 ABLATIONS = {
-    "A1": {"feature_set": "log_price_only", "model": {"type": "tcn", "multitask": False}},
-    "A2": {"feature_set": "log_price_velocity", "model": {"type": "tcn", "multitask": False}},
-    "A3": {"feature_set": "kinematics", "model": {"type": "tcn", "multitask": False}},
-    "A4": {"feature_set": "full_domain", "model": {"type": "tcn", "multitask": False}},
-    "A5": {"feature_set": "full_domain", "model": {"type": "multitask_tcn", "attention": False}},
-    "A6": {"feature_set": "full_domain", "model": {"type": "multitask_tcn", "attention": True}},
+    "A1": {"feature_set": "log_price_only", "model": {"type": "lstm", "multitask": False}},
+    "A2": {"feature_set": "log_price_velocity", "model": {"type": "lstm", "multitask": False}},
+    "A3": {"feature_set": "kinematics", "model": {"type": "lstm", "multitask": False}},
+    "A4": {"feature_set": "full_domain", "model": {"type": "lstm", "multitask": False}},
 }
+
+
+def is_multitask_config(model_cfg: dict) -> bool:
+    model_type = model_cfg.get("type")
+    return bool(model_cfg.get("multitask", model_type in {"multitask_lstm", "multitask_tcn"}))
 
 
 def run_ablation(config: dict, processed_path: str | Path) -> pd.DataFrame:
@@ -44,6 +48,7 @@ def run_ablation(config: dict, processed_path: str | Path) -> pd.DataFrame:
         cfg.setdefault("features", {})["feature_set"] = ablation["feature_set"]
         model_cfg = deepcopy(config.get("model", {}))
         model_cfg.update(ablation["model"])
+        model_cfg["name"] = f"{ablation_id}_{model_cfg['type']}"
         cfg["model"] = model_cfg
 
         set_seed(int(cfg.get("project", {}).get("seed", 42)))
@@ -60,7 +65,7 @@ def run_ablation(config: dict, processed_path: str | Path) -> pd.DataFrame:
             rows.append(
                 {
                     "ablation": ablation_id,
-                    "model": model_cfg["type"],
+                    "model": model_artifact_name(model_cfg),
                     "feature_set": ablation["feature_set"],
                     "status": "empty_split",
                 }
@@ -70,7 +75,7 @@ def run_ablation(config: dict, processed_path: str | Path) -> pd.DataFrame:
         model = build_model(model_cfg, num_features=len(feature_columns))
         model, _ = train_model(model, splits, cfg.get("training", {}))
         regime_threshold = DEFAULT_REGIME_THRESHOLD
-        if bool(model_cfg.get("multitask", model_cfg["type"] == "multitask_tcn")):
+        if is_multitask_config(model_cfg):
             regime_threshold = tune_regime_threshold(
                 model,
                 splits.val,
@@ -79,7 +84,7 @@ def run_ablation(config: dict, processed_path: str | Path) -> pd.DataFrame:
         bundle = predict_bundle(
             model,
             splits.test,
-            model_name=f"{ablation_id}_{model_cfg['type']}",
+            model_name=model_artifact_name(model_cfg),
             device=cfg.get("training", {}).get("device", "auto"),
             regime_threshold=regime_threshold,
         )
@@ -102,7 +107,7 @@ def run_ablation(config: dict, processed_path: str | Path) -> pd.DataFrame:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run A1-A6 feature/model ablations.")
+    parser = argparse.ArgumentParser(description="Run A1-A4 LSTM feature ablations.")
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--processed", default="data/processed/features_all.csv")
     args = parser.parse_args()

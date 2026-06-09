@@ -1,7 +1,7 @@
 base: default.yaml
 model:
-  name: tcn
-  type: tcn
+  name: tcn_mlp
+  type: tcn_mlp
   hidden_channels: 32
   kernel_size: 3
   dilations: [1, 2, 4, 8]

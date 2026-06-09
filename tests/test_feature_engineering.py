@@ -8,6 +8,7 @@ from src.data.features import (
     apply_risk_threshold,
     compute_future_drawdown,
     compute_future_realized_volatility,
+    compute_future_window_end_date,
     fit_risk_threshold,
 )
 
@@ -33,6 +34,17 @@ def test_future_drawdown_uses_only_next_window_as_label():
     assert result.iloc[1] == pytest.approx(-1.0 / 9.0)
     assert np.isnan(result.iloc[2])
     assert np.isnan(result.iloc[3])
+
+
+def test_future_window_end_date_aligns_to_horizon():
+    dates = pd.Series(pd.date_range("2020-01-01", periods=5, freq="D"))
+
+    result = compute_future_window_end_date(dates, horizon=2)
+
+    assert result.iloc[0] == pd.Timestamp("2020-01-03")
+    assert result.iloc[2] == pd.Timestamp("2020-01-05")
+    assert pd.isna(result.iloc[3])
+    assert pd.isna(result.iloc[4])
 
 
 def test_risk_threshold_is_fit_on_train_only():
@@ -75,5 +87,6 @@ def test_feature_engineering_does_not_add_future_vol_to_feature_columns():
     )
 
     assert "future_vol_3" in engineered.columns
+    assert "future_vol_3_end_date" in engineered.columns
     assert "log_price" in engineered.columns
     assert engineered["log_price"].iloc[0] == np.log(price[0])

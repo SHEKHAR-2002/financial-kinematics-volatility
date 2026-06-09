@@ -1,8 +1,8 @@
 base: default.yaml
 model:
-  name: lstm
-  type: lstm
+  name: multitask_lstm
+  type: multitask_lstm
   hidden_size: 64
   num_layers: 2
   dropout: 0.3
-  multitask: false
+  multitask: true

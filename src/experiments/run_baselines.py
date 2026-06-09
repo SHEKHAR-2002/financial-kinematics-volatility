@@ -6,14 +6,15 @@ from pathlib import Path
 import pandas as pd
 
 from src.data.datasets import (
-    chronological_split,
     flattened_window_tabular,
     latest_step_tabular,
     prepare_splits,
-    sequence_target_frame,
 )
-from src.data.features import apply_risk_threshold, fit_risk_threshold, get_feature_columns
-from src.models.baselines import classical_prediction_bundles, naive_volatility_predictions
+from src.data.features import get_feature_columns
+from src.models.baselines import (
+    classical_prediction_bundles,
+    naive_volatility_predictions_from_arrays,
+)
 from src.training.evaluate import evaluate_bundles, save_metrics
 from src.utils.config import ensure_dir, load_config
 
@@ -35,30 +36,6 @@ def run_baselines(config: dict, processed_path: str | Path) -> pd.DataFrame:
     quantile = float(target_cfg.get("regime_quantile", 0.75))
 
     frame = load_processed_frame(processed_path)
-    raw_splits = chronological_split(frame, config.get("splits", {}))
-    risk_threshold = fit_risk_threshold(raw_splits["train"], target_col, quantile)
-    labeled_raw = {
-        name: apply_risk_threshold(split, risk_threshold, target_col=target_col)
-        for name, split in raw_splits.items()
-    }
-    test_target_rows = sequence_target_frame(
-        labeled_raw["test"],
-        feature_columns=feature_columns,
-        sequence_length=sequence_length,
-        target_col=target_col,
-    )
-
-    bundles = [
-        naive_volatility_predictions(
-            target_frame=test_target_rows,
-            train_frame=labeled_raw["train"],
-            target_col=target_col,
-            past_vol_col=past_vol_col,
-            regime_col="high_risk",
-            quantile=quantile,
-        )
-    ]
-
     splits = prepare_splits(
         frame=frame,
         feature_columns=feature_columns,
@@ -67,11 +44,22 @@ def run_baselines(config: dict, processed_path: str | Path) -> pd.DataFrame:
         target_col=target_col,
         regime_quantile=quantile,
     )
+    bundles = [
+        naive_volatility_predictions_from_arrays(
+            eval_arrays=splits.test,
+            feature_columns=feature_columns,
+            scaler=splits.feature_scaler,
+            val_arrays=splits.val,
+            past_vol_col=past_vol_col,
+        )
+    ]
     if config.get("experiments", {}).get("tabular_window", "latest") == "flattened":
         x_train, y_vol_train, y_regime_train = flattened_window_tabular(splits.train)
+        x_val, _, y_regime_val = flattened_window_tabular(splits.val)
         x_test, y_vol_test, y_regime_test = flattened_window_tabular(splits.test)
     else:
         x_train, y_vol_train, y_regime_train = latest_step_tabular(splits.train)
+        x_val, _, y_regime_val = latest_step_tabular(splits.val)
         x_test, y_vol_test, y_regime_test = latest_step_tabular(splits.test)
 
     bundles.extend(
@@ -79,6 +67,8 @@ def run_baselines(config: dict, processed_path: str | Path) -> pd.DataFrame:
             X_train=x_train,
             y_vol_train=y_vol_train,
             y_regime_train=y_regime_train,
+            X_val=x_val,
+            y_regime_val=y_regime_val,
             X_eval=x_test,
             y_vol_eval=y_vol_test,
             y_regime_eval=y_regime_test,

@@ -2,7 +2,15 @@
 
 ## Project Title
 
-Financial Kinematics: Derivative-Enriched Multi-Task TCN for Volatility and Risk-Regime Forecasting
+Financial Kinematics: Historical Planning Context
+
+Note: this file preserves the original project planning context. The cleaned
+publishable workflow now uses single-task LSTM for the main feature ablation and
+walk-forward validation, keeps vanilla TCN as an architecture comparison, and
+retains multi-task/attention variants as experimental code outside the main
+workflow.
+
+Original title: Derivative-Enriched Multi-Task TCN for Volatility and Risk-Regime Forecasting
 
 ## 1. Project Purpose
 
@@ -834,4 +842,3 @@ Developed a derivative-aware temporal modeling project as a precursor to physics
 ```text
 This project reframes stock-market prediction as a risk forecasting problem. Instead of predicting exact future prices, it models financial motion through log price, return, and return acceleration, then uses a multi-task Temporal Convolutional Network to forecast future realized volatility and high-risk market regimes. The system is evaluated using leakage-free chronological splits, walk-forward validation, classical and deep learning baselines, and ablation studies that measure the contribution of derivative-enriched features.
 ```
-

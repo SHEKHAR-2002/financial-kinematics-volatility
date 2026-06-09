@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     confusion_matrix,
     f1_score,
     mean_absolute_error,
@@ -61,8 +62,13 @@ def classification_metrics(
             metrics["roc_auc"] = float(roc_auc_score(y_true, y_score))
         except ValueError:
             metrics["roc_auc"] = float("nan")
+        try:
+            metrics["pr_auc"] = float(average_precision_score(y_true, y_score))
+        except ValueError:
+            metrics["pr_auc"] = float("nan")
     else:
         metrics["roc_auc"] = float("nan")
+        metrics["pr_auc"] = float("nan")
 
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     metrics.update(
@@ -79,6 +85,8 @@ def classification_metrics(
 def evaluate_bundle(bundle: PredictionBundle) -> dict[str, float | str]:
     metrics: dict[str, float | str] = {"model": bundle.model}
     metrics.update(regression_metrics(bundle.y_vol_true, bundle.y_vol_pred))
+    if bundle.regime_threshold is not None:
+        metrics["regime_threshold"] = float(bundle.regime_threshold)
     if bundle.y_regime_true is not None and (
         bundle.y_regime_score is not None or bundle.y_regime_pred is not None
     ):

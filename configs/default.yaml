@@ -44,12 +44,12 @@ target:
   regime_quantile: 0.75
 
 model:
-  type: multitask_tcn
-  hidden_channels: 32
-  kernel_size: 3
-  dilations: [1, 2, 4, 8]
-  dropout: 0.2
-  attention: false
+  name: lstm
+  type: lstm
+  hidden_size: 64
+  num_layers: 2
+  dropout: 0.3
+  multitask: false
 
 training:
   epochs: 100
@@ -75,5 +75,3 @@ experiments:
     A2: log_price_velocity
     A3: kinematics
     A4: full_domain
-    A5: full_domain_multitask
-    A6: full_domain_multitask_attention

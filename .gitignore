@@ -9,5 +9,6 @@ venv/
 
 data/raw/*.csv
 data/processed/*.csv
-results/
+results/checkpoints/*.pt
+results/tables/*_history.csv
 financial_kinematics.egg-info/

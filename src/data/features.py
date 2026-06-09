@@ -83,6 +83,13 @@ def compute_future_realized_volatility(returns: pd.Series, horizon: int) -> pd.S
     )
 
 
+def compute_future_window_end_date(dates: pd.Series, horizon: int) -> pd.Series:
+    """Align the final date consumed by a t+1...t+horizon target window."""
+    if horizon <= 0:
+        raise ValueError("horizon must be positive")
+    return pd.to_datetime(dates).shift(-horizon)
+
+
 def compute_future_drawdown(price: pd.Series, horizon: int) -> pd.Series:
     """Align min(P[t+1], ..., P[t+horizon]) / P[t] - 1 at index t."""
     if horizon <= 0:
@@ -168,7 +175,13 @@ def add_financial_kinematics_features(
     df[f"future_vol_{cfg.horizon}"] = compute_future_realized_volatility(
         df["velocity"], cfg.horizon
     )
+    df[f"future_vol_{cfg.horizon}_end_date"] = compute_future_window_end_date(
+        df["Date"], cfg.horizon
+    )
     df[f"future_drawdown_{cfg.horizon}"] = compute_future_drawdown(price, cfg.horizon)
+    df[f"future_drawdown_{cfg.horizon}_end_date"] = compute_future_window_end_date(
+        df["Date"], cfg.horizon
+    )
     return df
 
 

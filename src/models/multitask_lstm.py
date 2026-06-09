@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 
-class LSTMVolatilityRegressor(nn.Module):
+class LSTMMultiTask(nn.Module):
     def __init__(
         self,
         num_features: int,
@@ -20,8 +20,14 @@ class LSTMVolatilityRegressor(nn.Module):
             dropout=dropout if num_layers > 1 else 0.0,
             batch_first=True,
         )
-        self.head = nn.Linear(hidden_size, 1)
+        self.regression_head = nn.Linear(hidden_size, 1)
+        self.classification_head = nn.Linear(hidden_size, 1)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         output, _ = self.lstm(x)
-        return self.head(output[:, -1, :]).squeeze(-1)
+        last = output[:, -1, :]
+        return {
+            "volatility": self.regression_head(last).squeeze(-1),
+            "regime_logit": self.classification_head(last).squeeze(-1),
+            "attention_weights": None,
+        }

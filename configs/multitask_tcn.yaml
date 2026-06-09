@@ -1,5 +1,6 @@
 base: default.yaml
 model:
+  name: multitask_tcn
   type: multitask_tcn
   hidden_channels: 32
   kernel_size: 3

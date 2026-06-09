@@ -119,3 +119,40 @@ class TCNVolatilityRegressor(nn.Module):
         features = self.tcn(x)
         pooled = self.pool(features)
         return self.head(pooled).squeeze(-1)
+
+
+class TCNVolatilityRegressorMLP(nn.Module):
+    def __init__(
+        self,
+        num_features: int,
+        hidden_channels: int = 32,
+        kernel_size: int = 3,
+        dilations: list[int] | tuple[int, ...] = (1, 2, 4, 8),
+        dropout: float = 0.2,
+        pooling: str = "last",
+    ):
+        super().__init__()
+        self.tcn = TemporalConvNet(
+            num_features=num_features,
+            hidden_channels=hidden_channels,
+            kernel_size=kernel_size,
+            dilations=dilations,
+            dropout=dropout,
+        )
+        self.pooling = pooling
+        self.head = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_channels, 1),
+        )
+
+    def pool(self, features: torch.Tensor) -> torch.Tensor:
+        if self.pooling == "mean":
+            return features.mean(dim=-1)
+        return features[:, :, -1]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.tcn(x)
+        pooled = self.pool(features)
+        return self.head(pooled).squeeze(-1)
