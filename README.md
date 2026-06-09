@@ -37,8 +37,8 @@ src/models/           Baselines, LSTM, TCN, experimental multi-task models
 src/training/         Losses, training loop, evaluation metrics
 src/experiments/      Baseline, ablation, and walk-forward scripts
 src/utils/            Config, seed, plotting helpers
-results/              Tables, figures, checkpoints
-reports/              Project report skeleton
+results/              Result tables, figures, checkpoints
+reports/              Project report, context, and limitations
 tests/                Leakage and alignment tests
 ```
 
@@ -91,6 +91,12 @@ Train the main LSTM model:
 python -m src.training.train --config configs/lstm.yaml --processed data/processed/features_all.csv
 ```
 
+Train the compact kinematics-only LSTM identified by ablation:
+
+```bash
+python -m src.training.train --config configs/lstm_kinematics.yaml --processed data/processed/features_all.csv
+```
+
 Train the vanilla TCN comparison model:
 
 ```bash
@@ -109,9 +115,30 @@ Run expanding walk-forward validation for LSTM:
 python -m src.experiments.walk_forward --config configs/lstm.yaml --processed data/processed/features_all.csv
 ```
 
+Optional follow-up for the strongest ablation:
+
+```bash
+python -m src.experiments.walk_forward --config configs/lstm_kinematics.yaml --processed data/processed/features_all.csv
+```
+
 Experimental configs such as `configs/multitask_lstm.yaml`, `configs/multitask_tcn.yaml`,
 and `configs/tcn_mlp.yaml` are retained for exploration, but they are not part of
 the main publishable workflow.
+
+## Current Result Summary
+
+The strongest fixed-split result is the compact kinematics-only LSTM ablation:
+
+| Model | Feature Set | MAE | RMSE | R2 | Pearson |
+|---|---|---:|---:|---:|---:|
+| A3 LSTM | log price + velocity + acceleration | 0.003305 | 0.004265 | -0.002 | 0.216 |
+| Lasso | latest-step baseline | 0.003386 | 0.004478 | -0.105 | 0.275 |
+| Full-domain LSTM | all engineered features | 0.003881 | 0.004985 | -0.370 | 0.047 |
+| Vanilla TCN | all engineered features | 0.004095 | 0.005486 | -0.659 | 0.189 |
+
+These results should be read as volatility-forecasting evidence, not trading
+advice. Walk-forward validation is mixed, so the project reports the result
+conservatively.
 
 ## Methodological Guardrails
 

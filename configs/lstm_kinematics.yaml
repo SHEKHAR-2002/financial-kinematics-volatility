@@ -1,0 +1,5 @@
+base: lstm.yaml
+model:
+  name: lstm_kinematics
+features:
+  feature_set: kinematics

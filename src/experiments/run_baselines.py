@@ -53,7 +53,8 @@ def run_baselines(config: dict, processed_path: str | Path) -> pd.DataFrame:
             past_vol_col=past_vol_col,
         )
     ]
-    if config.get("experiments", {}).get("tabular_window", "latest") == "flattened":
+    tabular_window = config.get("experiments", {}).get("tabular_window", "latest")
+    if tabular_window == "flattened":
         x_train, y_vol_train, y_regime_train = flattened_window_tabular(splits.train)
         x_val, _, y_regime_val = flattened_window_tabular(splits.val)
         x_test, y_vol_test, y_regime_test = flattened_window_tabular(splits.test)
@@ -77,7 +78,12 @@ def run_baselines(config: dict, processed_path: str | Path) -> pd.DataFrame:
     )
     metrics = evaluate_bundles(bundles)
     tables_dir = ensure_dir(config.get("paths", {}).get("tables_dir", "results/tables"))
-    save_metrics(metrics, tables_dir / "baseline_metrics.csv")
+    output_name = (
+        "baseline_flattened_metrics.csv"
+        if tabular_window == "flattened"
+        else "baseline_metrics.csv"
+    )
+    save_metrics(metrics, tables_dir / output_name)
     return metrics
 
 
